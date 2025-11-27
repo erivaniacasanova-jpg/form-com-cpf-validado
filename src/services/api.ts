@@ -43,50 +43,125 @@ export const checkCpfAvailability = async (cpf: string, birthDate: string): Prom
   }
 };
 
-// Submit form data directly (No Iframe)
-export const submitRegistration = async (formData: RegistrationFormData, token: string, fatherId: string) => {
-  const data = new FormData();
+// Submit form data using iframe method
+export const submitRegistration = async (formData: RegistrationFormData, token: string, fatherId: string): Promise<{ success: boolean }> => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Criar iframe invisível
+      const iframe = document.createElement('iframe');
+      iframe.name = 'federal_form_target';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
 
-  // Static fields required by the backend
-  data.append('_token', token);
-  data.append('status', '0');
-  data.append('father', fatherId);
-  data.append('type', 'Recorrente');
+      // Criar formulário oculto
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://federalassociados.com.br/registroSave';
+      form.target = 'federal_form_target';
+      form.style.display = 'none';
 
-  // Map dynamic fields
-  Object.entries(formData).forEach(([key, value]) => {
-    data.append(key, value);
+      // Remover máscaras dos campos
+      const cleanCPF = unmask(formData.cpf);
+      const cleanCell = unmask(formData.cell);
+      const cleanCEP = unmask(formData.cep);
+
+      // Adicionar todos os campos como inputs hidden
+      const fields = {
+        _token: token,
+        status: '0',
+        father: fatherId,
+        type: 'Recorrente',
+        cpf: cleanCPF,
+        birth: formData.birth,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        cell: cleanCell,
+        cep: cleanCEP,
+        district: formData.district,
+        city: formData.city,
+        state: formData.state,
+        street: formData.street,
+        number: formData.number,
+        complement: formData.complement,
+        typeChip: formData.typeChip,
+        coupon: formData.coupon,
+        plan_id: formData.plan_id,
+        typeFrete: formData.typeFrete
+      };
+
+      // Criar inputs hidden
+      Object.entries(fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+
+      // Monitorar o carregamento do iframe
+      iframe.onload = () => {
+        try {
+          // Tentar acessar o conteúdo do iframe para detectar erros
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+
+          if (iframeDoc) {
+            const errorAlert = iframeDoc.querySelector('.alert-danger');
+            const errorSpan = iframeDoc.querySelector('.text-danger');
+
+            if ((errorAlert && errorAlert.textContent?.includes('cpf já está sendo utilizado')) ||
+                (errorSpan && errorSpan.textContent?.includes('cpf já está sendo utilizado'))) {
+              // CPF duplicado detectado
+              if (document.body.contains(form)) {
+                document.body.removeChild(form);
+              }
+              if (document.body.contains(iframe)) {
+                document.body.removeChild(iframe);
+              }
+              reject(new Error('CPF já cadastrado'));
+              return;
+            }
+          }
+        } catch (error) {
+          // Erro de CORS - não conseguimos ler o iframe, mas vamos prosseguir
+          console.log('Não foi possível verificar resposta do iframe (CORS)');
+        }
+
+        // Aguardar 3 segundos antes de considerar sucesso
+        setTimeout(() => {
+          // Remover form e iframe do DOM
+          if (document.body.contains(form)) {
+            document.body.removeChild(form);
+          }
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+
+          resolve({ success: true });
+        }, 3000);
+      };
+
+      // Tratar erro de carregamento do iframe
+      iframe.onerror = () => {
+        if (document.body.contains(form)) {
+          document.body.removeChild(form);
+        }
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+        reject(new Error('Erro ao enviar formulário'));
+      };
+
+      // Enviar formulário
+      form.submit();
+
+    } catch (error) {
+      console.error('Erro ao processar cadastro:', error);
+      reject(error);
+    }
   });
-
-  try {
-    const response = await fetch('https://federalassociados.com.br/registroSave', {
-      method: 'POST',
-      body: data,
-      headers: {
-        'Accept': 'application/json, text/plain, */*',
-      }
-    });
-
-    // Verificar redirecionamentos ou erros de status
-    if (!response.ok) {
-        throw new Error(`Servidor respondeu com erro: ${response.status}`);
-    }
-
-    // Tentar ler a resposta
-    const responseText = await response.text();
-
-    // Se a resposta contiver indícios de erro do Laravel (como "Whoops" ou validações em HTML)
-    if (responseText.includes("Whoops") || responseText.includes("error")) {
-        // Podemos tentar inferir que falhou
-        // Mas geralmente o redirecionamento acontece para uma página de sucesso
-    }
-
-    return { success: true, data: responseText };
-
-  } catch (error) {
-    console.error("Erro no envio:", error);
-    throw error;
-  }
 };
 
 // Send data to webhook with plan name

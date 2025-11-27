@@ -147,13 +147,24 @@ export const RegistrationForm: React.FC = () => {
       const planLabel = getPlanLabel();
       sendToWebhook(formData, planLabel);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setStatus({
-        loading: false,
-        message: "Houve um problema na comunicação. Seus dados foram enviados, mas não recebemos a confirmação do servidor.",
-        type: 'warning'
-      });
+
+      if (error?.message === 'CPF já cadastrado') {
+        setStatus({
+          loading: false,
+          message: "CPF já cadastrado. Não é possível realizar o cadastro.",
+          type: 'error'
+        });
+      } else {
+        setStatus({
+          loading: false,
+          message: "Não foi possível completar o cadastro. Verifique sua conexão e tente novamente.",
+          type: 'error'
+        });
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
