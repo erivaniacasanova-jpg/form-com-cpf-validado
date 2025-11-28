@@ -17,26 +17,38 @@ export const fetchAddressByCep = async (cep: string): Promise<ViaCepResponse | n
   }
 };
 
-// Check CPF existence using the external API
-// Esta é a chave para bloquear cadastros duplicados
+// Check CPF existence validating against Federal Associados database
 export const checkCpfAvailability = async (cpf: string, birthDate: string): Promise<CpfCheckResponse | null> => {
   const cleanCpf = unmask(cpf);
-  
-  // Convert YYYY-MM-DD to DD-MM-YYYY for the API
-  const [year, month, day] = birthDate.split('-');
-  const formattedBirth = `${day}-${month}-${year}`;
 
-  const url = `https://apicpf.whatsgps.com.br/api/cpf/search?numeroDeCpf=${cleanCpf}&dataNascimento=${formattedBirth}&token=${CPF_API_TOKEN}`;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/validate-cpf-federal`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cpf: cleanCpf,
+          birthDate: birthDate
+        })
       }
-    });
-    return await response.json();
+    );
+
+    const data = await response.json();
+
+    return {
+      data: {
+        id: data.registered ? 1 : null,
+        numero_de_cpf: cleanCpf
+      },
+      available: data.available
+    } as CpfCheckResponse;
   } catch (error) {
     console.error("Error checking CPF", error);
     return null;
